@@ -1,92 +1,209 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import axios from 'axios';
 
 const Dashboard = () => {
   const [dashboardData, setDashboardData] = useState(null);
+  const [onlineUsers, setOnlineUsers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const { logout, username } = useAuth();
+  const [error, setError] = useState(null);
+  const { username, logout } = useAuth();
   const navigate = useNavigate();
 
-  const API_BASE = process.env.REACT_APP_USER_SERVICE_URL || 'http://localhost:8080';
+  const USER_SERVICE_URL = 'http://localhost:8080';
+  const CHAT_SERVICE_URL = 'http://localhost:3001';
 
   useEffect(() => {
-    fetchDashboardData();
-  }, []);
+    if (!username) {
+      navigate('/login');
+      return;
+    }
+    fetchData();
+    
+    const interval = setInterval(fetchOnlineUsers, 5000);
+    return () => clearInterval(interval);
+  }, [username, navigate]);
+
+  const fetchData = async () => {
+    await Promise.all([fetchDashboardData(), fetchOnlineUsers()]);
+    setLoading(false);
+  };
 
   const fetchDashboardData = async () => {
     try {
-      const response = await axios.get(`${API_BASE}/api/users/dashboard`);
-      setDashboardData(response.data);
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error);
-    } finally {
-      setLoading(false);
+      const response = await fetch(`${USER_SERVICE_URL}/api/users/dashboard`);
+      if (response.ok) {
+        const data = await response.json();
+        setDashboardData(data);
+      } else {
+        setError('Failed to fetch user data');
+      }
+    } catch (err) {
+      setError('Cannot connect to user service');
     }
   };
 
-  const handleLogout = async () => {
-    await logout();
-    navigate('/login');
+  const fetchOnlineUsers = async () => {
+    try {
+      const response = await fetch(`${CHAT_SERVICE_URL}/api/users/active`);
+      if (response.ok) {
+        const data = await response.json();
+        setOnlineUsers((data.activeUsers || []).filter(u => u !== username));
+      }
+    } catch (err) {
+      console.error('Cannot fetch online users:', err);
+    }
   };
 
-  const goToChat = () => {
-    navigate('/chat');
+  const startPrivateChat = (targetUser) => {
+    navigate('/chat', { 
+      state: { 
+        selectedUser: targetUser, 
+        chatMode: 'private' 
+      } 
+    });
   };
+
+  if (!username) {
+    return <div>Please log in</div>;
+  }
 
   if (loading) {
-    return <div style={styles.loading}>Loading dashboard...</div>;
+    return (
+      <div style={styles.container}>
+        <div style={styles.loading}>Loading...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={styles.container}>
+        <div style={styles.error}>
+          <h3>Error: {error}</h3>
+          <button onClick={() => window.location.reload()} style={styles.button}>
+            Retry
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <h1>Welcome, {username}!</h1>
         <div>
-          <button onClick={goToChat} style={styles.chatButton}>
+          <h1>Dashboard</h1>
+          <p>Welcome, {username}!</p>
+        </div>
+        <div>
+          <button onClick={() => navigate('/chat')} style={styles.primaryButton}>
             Go to Chat
           </button>
-          <button onClick={handleLogout} style={styles.logoutButton}>
+          <button onClick={logout} style={styles.dangerButton}>
             Logout
           </button>
         </div>
       </div>
 
-      <div style={styles.stats}>
-        <div style={styles.statCard}>
-          <h3>Total Users</h3>
-          <p style={styles.statNumber}>{dashboardData?.totalUsers || 0}</p>
+      <div style={styles.content}>
+        {/* Stats */}
+        <div style={styles.statsGrid}>
+          <div style={styles.statCard}>
+            <h3>Total Users</h3>
+            <div style={styles.statNumber}>{dashboardData?.totalUsers || 0}</div>
+          </div>
+          <div style={styles.statCard}>
+            <h3>Registered & Active</h3>
+            <div style={styles.statNumber}>{dashboardData?.activeUsers || 0}</div>
+          </div>
+          <div style={styles.statCard}>
+            <h3>Currently Online</h3>
+            <div style={styles.statNumber}>{onlineUsers.length}</div>
+            <button onClick={fetchOnlineUsers} style={styles.refreshButton}>
+              🔄 Refresh
+            </button>
+          </div>
         </div>
-        <div style={styles.statCard}>
-          <h3>Active Users</h3>
-          <p style={styles.statNumber}>{dashboardData?.activeUsers || 0}</p>
-        </div>
-      </div>
 
-      <div style={styles.usersList}>
-        <h2>All Users</h2>
-        <div style={styles.usersGrid}>
-          {dashboardData?.users?.map(user => (
-            <div key={user.id} style={styles.userCard}>
-              <div style={styles.userInfo}>
-                <h4>{user.username}</h4>
-                <p>{user.email}</p>
-                <span style={{
-                  ...styles.status,
-                  backgroundColor: user.active ? '#28a745' : '#6c757d'
-                }}>
-                  {user.active ? 'Online' : 'Offline'}
-                </span>
-              </div>
-              {user.lastSeen && (
-                <p style={styles.lastSeen}>
-                  Last seen: {new Date(user.lastSeen).toLocaleString()}
-                </p>
-              )}
+        {/* Online Users - Currently in chat */}
+        {onlineUsers.length > 0 && (
+          <div style={styles.section}>
+            <h2>🟢 Users Online Now (In Chat)</h2>
+            <div style={styles.onlineGrid}>
+              {onlineUsers.map(user => (
+                <div key={user} style={styles.onlineCard}>
+                  <div>
+                    <div style={styles.onlineUser}>👤 {user}</div>
+                    <div style={styles.onlineStatus}>🟢 Online in chat</div>
+                  </div>
+                  <button
+                    onClick={() => startPrivateChat(user)}
+                    style={styles.chatButton}
+                  >
+                    💬 Chat Now
+                  </button>
+                </div>
+              ))}
             </div>
-          ))}
+          </div>
+        )}
+
+        {/* All Users */}
+        <div style={styles.section}>
+          <h2>All Registered Users</h2>
+          <div style={styles.usersList}>
+            {dashboardData?.users?.map(user => (
+              <div key={user.id} style={styles.userCard}>
+                <div style={styles.userInfo}>
+                  <div style={styles.userName}>
+                    {user.username}
+                    {user.username === username && <span style={styles.youBadge}> (You)</span>}
+                  </div>
+                  <div style={styles.userEmail}>{user.email}</div>
+                  <div style={styles.lastSeen}>
+                    Last seen: {new Date(user.lastSeen).toLocaleString()}
+                  </div>
+                </div>
+                <div style={styles.userStatus}>
+                  <div style={{
+                    ...styles.statusBadge,
+                    backgroundColor: user.active ? '#28a745' : '#6c757d'
+                  }}>
+                    {user.active ? '✓ Active Account' : '✗ Inactive Account'}
+                  </div>
+                  <div style={{
+                    ...styles.statusBadge,
+                    backgroundColor: onlineUsers.includes(user.username) ? '#007bff' : '#e9ecef',
+                    color: onlineUsers.includes(user.username) ? 'white' : '#6c757d'
+                  }}>
+                    {onlineUsers.includes(user.username) ? '🟢 Online' : '⚫ Offline'}
+                  </div>
+                  {onlineUsers.includes(user.username) && user.username !== username && (
+                    <button
+                      onClick={() => startPrivateChat(user.username)}
+                      style={styles.chatButton}
+                    >
+                      💬 Chat
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
+
+        {onlineUsers.length === 0 && (
+          <div style={styles.section}>
+            <div style={styles.emptyState}>
+              <h3>No Other Users Online</h3>
+              <p>When other users join the chat, they will appear here and you can start private conversations.</p>
+              <button onClick={fetchOnlineUsers} style={styles.primaryButton}>
+                🔄 Check Again
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -94,94 +211,183 @@ const Dashboard = () => {
 
 const styles = {
   container: {
-    padding: '2rem',
-    maxWidth: '1200px',
-    margin: '0 auto'
+    minHeight: '100vh',
+    backgroundColor: '#f8f9fa',
+    padding: '20px'
   },
   header: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '2rem',
-    paddingBottom: '1rem',
-    borderBottom: '1px solid #eee'
+    marginBottom: '30px',
+    padding: '20px',
+    backgroundColor: 'white',
+    borderRadius: '8px',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+  },
+  content: {
+    maxWidth: '1200px',
+    margin: '0 auto'
+  },
+  statsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+    gap: '20px',
+    marginBottom: '30px'
+  },
+  statCard: {
+    backgroundColor: 'white',
+    padding: '20px',
+    borderRadius: '8px',
+    textAlign: 'center',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+  },
+  statNumber: {
+    fontSize: '2.5rem',
+    fontWeight: 'bold',
+    color: '#007bff',
+    margin: '10px 0'
+  },
+  section: {
+    backgroundColor: 'white',
+    padding: '20px',
+    borderRadius: '8px',
+    marginBottom: '20px',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+  },
+  onlineGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+    gap: '15px'
+  },
+  onlineCard: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '15px',
+    border: '2px solid #007bff',
+    borderRadius: '8px',
+    backgroundColor: '#f0f8ff'
+  },
+  onlineUser: {
+    fontSize: '18px',
+    fontWeight: 'bold',
+    color: '#007bff'
+  },
+  onlineStatus: {
+    fontSize: '14px',
+    color: '#28a745'
+  },
+  usersList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px'
+  },
+  userCard: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '15px',
+    border: '1px solid #dee2e6',
+    borderRadius: '6px',
+    backgroundColor: '#f8f9fa'
+  },
+  userInfo: {
+    flex: 1
+  },
+  userName: {
+    fontSize: '18px',
+    fontWeight: 'bold',
+    marginBottom: '5px'
+  },
+  youBadge: {
+    color: '#007bff',
+    fontSize: '14px'
+  },
+  userEmail: {
+    color: '#6c757d',
+    marginBottom: '5px'
+  },
+  lastSeen: {
+    color: '#6c757d',
+    fontSize: '12px'
+  },
+  userStatus: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    gap: '5px'
+  },
+  statusBadge: {
+    padding: '4px 8px',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: 'bold',
+    color: 'white'
+  },
+  primaryButton: {
+    padding: '12px 20px',
+    backgroundColor: '#007bff',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: 'bold',
+    marginRight: '10px'
+  },
+  dangerButton: {
+    padding: '12px 20px',
+    backgroundColor: '#dc3545',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: 'bold'
   },
   chatButton: {
-    padding: '0.5rem 1rem',
+    padding: '8px 12px',
+    backgroundColor: '#28a745',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '12px',
+    fontWeight: 'bold'
+  },
+  refreshButton: {
+    padding: '5px 10px',
+    backgroundColor: '#6c757d',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '12px',
+    marginTop: '10px'
+  },
+  button: {
+    padding: '10px 20px',
     backgroundColor: '#007bff',
     color: 'white',
     border: 'none',
     borderRadius: '4px',
-    marginRight: '1rem',
     cursor: 'pointer'
   },
-  logoutButton: {
-    padding: '0.5rem 1rem',
-    backgroundColor: '#dc3545',
-    color: 'white',
-    border: 'none',
-    borderRadius: '4px',
-    cursor: 'pointer'
-  },
-  stats: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-    gap: '1rem',
-    marginBottom: '2rem'
-  },
-  statCard: {
-    backgroundColor: 'white',
-    padding: '1.5rem',
-    borderRadius: '8px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    textAlign: 'center'
-  },
-  statNumber: {
-    fontSize: '2rem',
-    fontWeight: 'bold',
-    color: '#007bff',
-    margin: '0.5rem 0'
-  },
-  usersList: {
-    backgroundColor: 'white',
-    padding: '1.5rem',
-    borderRadius: '8px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-  },
-  usersGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-    gap: '1rem',
-    marginTop: '1rem'
-  },
-  userCard: {
-    border: '1px solid #eee',
-    borderRadius: '4px',
-    padding: '1rem'
-  },
-  userInfo: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '0.5rem'
-  },
-  status: {
-    padding: '0.25rem 0.5rem',
-    borderRadius: '12px',
-    color: 'white',
-    fontSize: '0.8rem'
-  },
-  lastSeen: {
-    fontSize: '0.8rem',
-    color: '#666',
-    margin: 0
+  emptyState: {
+    textAlign: 'center',
+    padding: '40px',
+    color: '#6c757d'
   },
   loading: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    minHeight: '100vh',
-    fontSize: '1.2rem'
+    textAlign: 'center',
+    padding: '50px',
+    fontSize: '18px'
+  },
+  error: {
+    textAlign: 'center',
+    padding: '50px',
+    color: '#dc3545'
   }
 };
 

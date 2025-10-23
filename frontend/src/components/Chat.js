@@ -1,20 +1,37 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import io from 'socket.io-client';
 
 const Chat = () => {
   const [messages, setMessages] = useState([]);
+  const [privateMessages, setPrivateMessages] = useState({});
   const [newMessage, setNewMessage] = useState('');
   const [socket, setSocket] = useState(null);
   const [connected, setConnected] = useState(false);
+  const [onlineUsers, setOnlineUsers] = useState([]);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [chatMode, setChatMode] = useState('public');
   const messagesEndRef = useRef(null);
   const { username, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
-  const CHAT_SERVICE_URL = process.env.REACT_APP_CHAT_SERVICE_URL || 'http://localhost:3001';
+  const CHAT_SERVICE_URL = 'http://localhost:3001';
 
   useEffect(() => {
+    if (location.state?.selectedUser && location.state?.chatMode === 'private') {
+      setSelectedUser(location.state.selectedUser);
+      setChatMode('private');
+    }
+  }, [location.state]);
+
+  useEffect(() => {
+    if (!username) {
+      navigate('/login');
+      return;
+    }
+
     const newSocket = io(CHAT_SERVICE_URL);
     setSocket(newSocket);
 
@@ -28,147 +45,211 @@ const Chat = () => {
     });
 
     newSocket.on('messageHistory', (history) => {
-      setMessages(history);
+      setMessages(history || []);
+    });
+
+    newSocket.on('privateMessageHistory', (history) => {
+      const grouped = {};
+      (history || []).forEach(msg => {
+        const otherUser = msg.username === username ? msg.recipient : msg.username;
+        if (!grouped[otherUser]) grouped[otherUser] = [];
+        grouped[otherUser].push(msg);
+      });
+      setPrivateMessages(grouped);
     });
 
     newSocket.on('message', (message) => {
       setMessages(prev => [...prev, message]);
     });
 
-    newSocket.on('messageDeleted', (messageId) => {
-      setMessages(prev => prev.filter(msg => msg.id !== messageId));
+    newSocket.on('privateMessage', (message) => {
+      const otherUser = message.username === username ? message.recipient : message.username;
+      setPrivateMessages(prev => ({
+        ...prev,
+        [otherUser]: [...(prev[otherUser] || []), message]
+      }));
     });
 
-    newSocket.on('chatCleared', () => {
-      setMessages([]);
+    newSocket.on('activeUsers', (users) => {
+      setOnlineUsers((users || []).filter(u => u !== username));
     });
 
-    newSocket.on('userJoined', (user) => {
-      console.log(`${user} joined the chat`);
-    });
-
-    newSocket.on('userLeft', (user) => {
-      console.log(`${user} left the chat`);
-    });
-
-    return () => {
-      newSocket.close();
-    };
-  }, [username, CHAT_SERVICE_URL]);
+    return () => newSocket.close();
+  }, [username, navigate]);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  }, [messages, privateMessages, selectedUser]);
 
-  const sendMessage = (e) => {
+  const handleSendMessage = (e) => {
     e.preventDefault();
-    if (newMessage.trim() && socket && connected) {
+    if (!newMessage.trim() || !socket || !connected) return;
+
+    if (chatMode === 'public') {
       socket.emit('sendMessage', {
         username,
         message: newMessage.trim()
       });
-      setNewMessage('');
+    } else if (selectedUser) {
+      socket.emit('sendPrivateMessage', {
+        username,
+        message: newMessage.trim(),
+        recipient: selectedUser
+      });
     }
+    setNewMessage('');
   };
 
-  const deleteMessage = (messageId) => {
-    if (socket && connected) {
-      socket.emit('deleteMessage', messageId);
-    }
+  const handlePublicChatClick = () => {
+    setChatMode('public');
+    setSelectedUser(null);
   };
 
-  const clearChat = () => {
-    if (socket && connected && window.confirm('Are you sure you want to clear all messages?')) {
-      socket.emit('clearChat');
-    }
+  const handleUserClick = (user) => {
+    setSelectedUser(user);
+    setChatMode('private');
   };
 
   const handleLogout = async () => {
+    if (socket) socket.close();
     await logout();
     navigate('/login');
   };
 
-  const goToDashboard = () => {
-    navigate('/dashboard');
-  };
+  const currentMessages = chatMode === 'public' ? messages : (privateMessages[selectedUser] || []);
 
   return (
     <div style={styles.container}>
-      <div style={styles.header}>
-        <div>
-          <h2>Chat Room</h2>
-          <span style={{
-            ...styles.status,
-            color: connected ? '#28a745' : '#dc3545'
-          }}>
-            {connected ? 'Connected' : 'Disconnected'}
-          </span>
-        </div>
-        <div>
-          <button onClick={goToDashboard} style={styles.dashboardButton}>
-            Dashboard
-          </button>
-          <button onClick={clearChat} style={styles.clearButton}>
-            Clear Chat
-          </button>
-          <button onClick={handleLogout} style={styles.logoutButton}>
-            Logout
-          </button>
-        </div>
-      </div>
-
-      <div style={styles.messagesContainer}>
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            style={{
-              ...styles.message,
-              alignSelf: message.username === username ? 'flex-end' : 'flex-start',
-              backgroundColor: message.username === username ? '#007bff' : '#f1f1f1',
-              color: message.username === username ? 'white' : 'black'
-            }}
-          >
-            <div style={styles.messageHeader}>
-              <strong>{message.username}</strong>
-              <span style={styles.timestamp}>
-                {new Date(message.timestamp).toLocaleTimeString()}
-              </span>
-              {message.username === username && (
-                <button
-                  onClick={() => deleteMessage(message.id)}
-                  style={styles.deleteButton}
-                >
-                  ×
-                </button>
-              )}
-            </div>
-            <div style={styles.messageText}>{message.message}</div>
-          </div>
-        ))}
-        <div ref={messagesEndRef} />
-      </div>
-
-      <form onSubmit={sendMessage} style={styles.messageForm}>
-        <input
-          type="text"
-          value={newMessage}
-          onChange={(e) => setNewMessage(e.target.value)}
-          placeholder="Type your message..."
-          style={styles.messageInput}
-          disabled={!connected}
-        />
-        <button
-          type="submit"
-          disabled={!connected || !newMessage.trim()}
-          style={styles.sendButton}
+      {/* Sidebar */}
+      <div style={styles.sidebar}>
+        <h3>Chat</h3>
+        
+        <button 
+          onClick={handlePublicChatClick}
+          style={{
+            ...styles.modeButton,
+            backgroundColor: chatMode === 'public' ? '#007bff' : '#e9ecef',
+            color: chatMode === 'public' ? 'white' : '#495057'
+          }}
         >
-          Send
+          📢 Public Chat
         </button>
-      </form>
+        
+        <h4 style={styles.sectionTitle}>Online Users ({onlineUsers.length})</h4>
+        
+        <div style={styles.usersList}>
+          {onlineUsers.length > 0 ? (
+            onlineUsers.map(user => (
+              <button
+                key={user}
+                onClick={() => handleUserClick(user)}
+                style={{
+                  ...styles.userButton,
+                  backgroundColor: selectedUser === user ? '#007bff' : '#f8f9fa',
+                  color: selectedUser === user ? 'white' : '#495057'
+                }}
+              >
+                <span>👤 {user}</span>
+                {privateMessages[user] && (
+                  <span style={styles.messageCount}>
+                    {privateMessages[user].length}
+                  </span>
+                )}
+              </button>
+            ))
+          ) : (
+            <div style={styles.noUsers}>
+              {connected ? 'No other users online' : 'Connecting...'}
+            </div>
+          )}
+        </div>
+
+        <div style={styles.statusInfo}>
+          <div>Status: {connected ? '🟢 Online' : '🔴 Offline'}</div>
+          <div>You: {username}</div>
+          {chatMode === 'private' && selectedUser && (
+            <div>Chatting with: {selectedUser}</div>
+          )}
+        </div>
+      </div>
+
+      {/* Main Chat Area */}
+      <div style={styles.chatArea}>
+        <div style={styles.header}>
+          <h2>
+            {chatMode === 'public' 
+              ? '📢 Public Chat Room' 
+              : `💬 Private Chat with ${selectedUser || 'Select User'}`
+            }
+          </h2>
+          <div>
+            <button onClick={() => navigate('/dashboard')} style={styles.headerButton}>
+              Dashboard
+            </button>
+            <button onClick={handleLogout} style={styles.logoutButton}>
+              Logout
+            </button>
+          </div>
+        </div>
+
+        <div style={styles.messagesContainer}>
+          {currentMessages.length > 0 ? (
+            currentMessages.map((message, index) => (
+              <div
+                key={message.id || message._id || index}
+                style={{
+                  ...styles.message,
+                  alignSelf: message.username === username ? 'flex-end' : 'flex-start',
+                  backgroundColor: message.username === username ? '#007bff' : '#e9ecef',
+                  color: message.username === username ? 'white' : '#495057'
+                }}
+              >
+                <div style={styles.messageHeader}>
+                  <strong>{message.username}</strong>
+                  <span style={styles.timestamp}>
+                    {new Date(message.timestamp).toLocaleTimeString()}
+                  </span>
+                </div>
+                <div>{message.message}</div>
+              </div>
+            ))
+          ) : (
+            <div style={styles.emptyState}>
+              {chatMode === 'public' 
+                ? '💬 No messages yet. Start the conversation!' 
+                : selectedUser 
+                  ? `💬 No messages with ${selectedUser} yet. Say hello!`
+                  : '👈 Select a user from the sidebar to start private chat'
+              }
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        <form onSubmit={handleSendMessage} style={styles.messageForm}>
+          <input
+            type="text"
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            placeholder={
+              chatMode === 'public' 
+                ? "Type your message..." 
+                : selectedUser 
+                  ? `Message ${selectedUser}...` 
+                  : "Select a user first"
+            }
+            style={styles.messageInput}
+            disabled={!connected || (chatMode === 'private' && !selectedUser)}
+          />
+          <button
+            type="submit"
+            disabled={!connected || !newMessage.trim() || (chatMode === 'private' && !selectedUser)}
+            style={styles.sendButton}
+          >
+            Send
+          </button>
+        </form>
+      </div>
     </div>
   );
 };
@@ -176,44 +257,97 @@ const Chat = () => {
 const styles = {
   container: {
     display: 'flex',
-    flexDirection: 'column',
     height: '100vh',
-    maxWidth: '800px',
-    margin: '0 auto',
-    backgroundColor: 'white'
+    fontFamily: 'Arial, sans-serif'
+  },
+  sidebar: {
+    width: '300px',
+    backgroundColor: '#f8f9fa',
+    borderRight: '1px solid #dee2e6',
+    padding: '20px',
+    display: 'flex',
+    flexDirection: 'column'
+  },
+  modeButton: {
+    width: '100%',
+    padding: '12px',
+    border: '1px solid #dee2e6',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '16px',
+    fontWeight: 'bold',
+    marginBottom: '20px',
+    transition: 'all 0.2s'
+  },
+  sectionTitle: {
+    fontSize: '16px',
+    fontWeight: 'bold',
+    marginBottom: '10px',
+    color: '#495057'
+  },
+  usersList: {
+    flex: 1,
+    overflowY: 'auto'
+  },
+  userButton: {
+    width: '100%',
+    padding: '12px',
+    border: '1px solid #dee2e6',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    marginBottom: '8px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    transition: 'all 0.2s'
+  },
+  messageCount: {
+    backgroundColor: '#dc3545',
+    color: 'white',
+    borderRadius: '12px',
+    padding: '2px 8px',
+    fontSize: '12px',
+    fontWeight: 'bold'
+  },
+  noUsers: {
+    textAlign: 'center',
+    color: '#6c757d',
+    padding: '20px',
+    fontStyle: 'italic'
+  },
+  statusInfo: {
+    marginTop: 'auto',
+    padding: '15px',
+    backgroundColor: '#e9ecef',
+    borderRadius: '6px',
+    fontSize: '12px',
+    color: '#495057'
+  },
+  chatArea: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column'
   },
   header: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: '1rem',
-    borderBottom: '1px solid #eee',
-    backgroundColor: '#f8f9fa'
+    padding: '20px',
+    backgroundColor: '#ffffff',
+    borderBottom: '1px solid #dee2e6'
   },
-  status: {
-    fontSize: '0.8rem',
-    fontWeight: 'bold'
-  },
-  dashboardButton: {
-    padding: '0.5rem 1rem',
+  headerButton: {
+    padding: '8px 16px',
     backgroundColor: '#6c757d',
     color: 'white',
     border: 'none',
     borderRadius: '4px',
-    marginRight: '0.5rem',
-    cursor: 'pointer'
-  },
-  clearButton: {
-    padding: '0.5rem 1rem',
-    backgroundColor: '#ffc107',
-    color: 'black',
-    border: 'none',
-    borderRadius: '4px',
-    marginRight: '0.5rem',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    marginRight: '10px'
   },
   logoutButton: {
-    padding: '0.5rem 1rem',
+    padding: '8px 16px',
     backgroundColor: '#dc3545',
     color: 'white',
     border: 'none',
@@ -222,62 +356,57 @@ const styles = {
   },
   messagesContainer: {
     flex: 1,
-    padding: '1rem',
+    padding: '20px',
     overflowY: 'auto',
     display: 'flex',
     flexDirection: 'column',
-    gap: '0.5rem'
+    gap: '10px'
   },
   message: {
     maxWidth: '70%',
-    padding: '0.75rem',
-    borderRadius: '8px',
+    padding: '12px',
+    borderRadius: '12px',
     wordWrap: 'break-word'
   },
   messageHeader: {
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '0.25rem',
-    fontSize: '0.8rem'
+    marginBottom: '4px',
+    fontSize: '12px',
+    opacity: 0.8
   },
   timestamp: {
-    opacity: 0.7,
-    fontSize: '0.7rem'
+    fontSize: '11px'
   },
-  deleteButton: {
-    background: 'none',
-    border: 'none',
-    color: 'inherit',
-    cursor: 'pointer',
-    fontSize: '1.2rem',
-    padding: '0 0.25rem'
-  },
-  messageText: {
-    fontSize: '0.9rem'
+  emptyState: {
+    textAlign: 'center',
+    color: '#6c757d',
+    padding: '40px',
+    fontSize: '16px'
   },
   messageForm: {
     display: 'flex',
-    padding: '1rem',
-    borderTop: '1px solid #eee',
-    backgroundColor: '#f8f9fa'
+    padding: '20px',
+    backgroundColor: '#f8f9fa',
+    borderTop: '1px solid #dee2e6'
   },
   messageInput: {
     flex: 1,
-    padding: '0.75rem',
-    border: '1px solid #ddd',
-    borderRadius: '4px',
-    marginRight: '0.5rem',
-    fontSize: '1rem'
+    padding: '12px',
+    border: '1px solid #ced4da',
+    borderRadius: '6px',
+    marginRight: '10px',
+    fontSize: '14px'
   },
   sendButton: {
-    padding: '0.75rem 1.5rem',
+    padding: '12px 24px',
     backgroundColor: '#007bff',
     color: 'white',
     border: 'none',
-    borderRadius: '4px',
+    borderRadius: '6px',
     cursor: 'pointer',
-    fontSize: '1rem'
+    fontSize: '14px',
+    fontWeight: 'bold'
   }
 };
 
