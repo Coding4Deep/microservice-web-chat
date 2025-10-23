@@ -5,6 +5,7 @@ import Register from './components/Register';
 import Dashboard from './components/Dashboard';
 import Chat from './components/Chat';
 import Profile from './components/Profile';
+import Posts from './components/Posts';
 import MonitoringDashboard from './components/MonitoringDashboard';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
@@ -29,6 +30,11 @@ function App() {
             <Route path="/chat" element={
               <ProtectedRoute>
                 <Chat />
+              </ProtectedRoute>
+            } />
+            <Route path="/posts" element={
+              <ProtectedRoute>
+                <Posts />
               </ProtectedRoute>
             } />
             <Route path="/profile" element={

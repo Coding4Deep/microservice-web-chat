@@ -16,6 +16,7 @@ public class MonitoringService {
         "user-service", "http://user-service:8080/",
         "chat-service", "http://chat-service:3001/health",
         "profile-service", "http://profile-service:8081/health",
+        "posts-service", "http://posts-service:8083/health",
         "monitoring-service", "http://monitoring-service:8080/monitoring/monitoring/health"
     );
 
@@ -173,21 +174,21 @@ public class MonitoringService {
         postgres.setType("PostgreSQL");
         postgres.setStatus(checkDatabaseHealth("postgres", 5432));
         postgres.setVersion("15");
-        postgres.setConnectedServices(Arrays.asList("user-service", "profile-service"));
+        postgres.setConnectedServices(Arrays.asList("user-service", "profile-service", "posts-service"));
         databases.put("PostgreSQL", postgres);
         
         SystemInfo.DatabaseInfo redis = new SystemInfo.DatabaseInfo();
         redis.setType("Redis");
         redis.setStatus(checkDatabaseHealth("redis", 6379));
         redis.setVersion("7");
-        redis.setConnectedServices(Arrays.asList("profile-service"));
+        redis.setConnectedServices(Arrays.asList("profile-service", "posts-service"));
         databases.put("Redis", redis);
         
         SystemInfo.DatabaseInfo mongodb = new SystemInfo.DatabaseInfo();
         mongodb.setType("MongoDB");
         mongodb.setStatus(checkDatabaseHealth("mongodb", 27017));
         mongodb.setVersion("7");
-        mongodb.setConnectedServices(Arrays.asList("chat-service"));
+        mongodb.setConnectedServices(Arrays.asList("chat-service", "posts-service"));
         databases.put("MongoDB", mongodb);
         
         return databases;

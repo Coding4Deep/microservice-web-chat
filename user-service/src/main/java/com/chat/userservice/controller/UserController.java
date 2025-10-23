@@ -126,7 +126,15 @@ public class UserController {
             String jwt = token.replace("Bearer ", "");
             if (jwtUtil.isTokenValid(jwt)) {
                 String username = jwtUtil.extractUsername(jwt);
-                return ResponseEntity.ok(Map.of("valid", true, "username", username));
+                Optional<User> userOpt = userService.getUserByUsername(username);
+                if (userOpt.isPresent()) {
+                    User user = userOpt.get();
+                    return ResponseEntity.ok(Map.of(
+                        "valid", true, 
+                        "username", username,
+                        "userId", user.getId()
+                    ));
+                }
             }
         } catch (Exception e) {
             // Token invalid

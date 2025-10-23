@@ -100,6 +100,9 @@ const Dashboard = () => {
           <button onClick={() => navigate('/profile')} style={styles.primaryButton}>
             My Profile
           </button>
+          <button onClick={() => navigate('/posts')} style={styles.primaryButton}>
+            📸 Posts
+          </button>
           <button onClick={() => navigate('/chat')} style={styles.primaryButton}>
             Go to Chat
           </button>

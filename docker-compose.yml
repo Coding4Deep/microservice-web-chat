@@ -95,6 +95,20 @@ services:
     environment:
       - CATALINA_OPTS=-Xmx512m
 
+  posts-service:
+    build: ./posts-service
+    ports:
+      - "8083:8083"
+    depends_on:
+      - postgres
+      - mongodb
+      - redis
+    environment:
+      DATABASE_URL: postgres://postgres:password@postgres:5432/userdb?sslmode=disable
+      MONGODB_URI: mongodb://mongodb:27017
+      REDIS_URL: redis:6379
+      USER_SERVICE_URL: http://user-service:8080
+
   frontend:
     build: ./frontend
     ports:

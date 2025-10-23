@@ -75,4 +75,8 @@ public class UserService {
     public long getActiveUsers() {
         return userRepository.countActiveUsers();
     }
+    
+    public Optional<User> getUserByUsername(String username) {
+        return userRepository.findByUsername(username);
+    }
 }
