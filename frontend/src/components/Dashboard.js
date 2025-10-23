@@ -97,6 +97,9 @@ const Dashboard = () => {
           <p>Welcome, {username}!</p>
         </div>
         <div>
+          <button onClick={() => navigate('/profile')} style={styles.primaryButton}>
+            My Profile
+          </button>
           <button onClick={() => navigate('/chat')} style={styles.primaryButton}>
             Go to Chat
           </button>
@@ -182,16 +185,24 @@ const Dashboard = () => {
                     </div>
                   </div>
                   {user.username !== username && (
-                    <button
-                      onClick={() => startPrivateChat(user.username)}
-                      style={{
-                        ...styles.chatButton,
-                        backgroundColor: onlineUsers.includes(user.username) ? '#28a745' : '#ffc107',
-                        color: onlineUsers.includes(user.username) ? 'white' : 'black'
-                      }}
-                    >
-                      💬 {onlineUsers.includes(user.username) ? 'Chat Now' : 'Send Message'}
-                    </button>
+                    <>
+                      <button
+                        onClick={() => navigate(`/profile/${user.username}`)}
+                        style={styles.profileButton}
+                      >
+                        👤 View Profile
+                      </button>
+                      <button
+                        onClick={() => startPrivateChat(user.username)}
+                        style={{
+                          ...styles.chatButton,
+                          backgroundColor: onlineUsers.includes(user.username) ? '#28a745' : '#ffc107',
+                          color: onlineUsers.includes(user.username) ? 'white' : 'black'
+                        }}
+                      >
+                        💬 {onlineUsers.includes(user.username) ? 'Chat Now' : 'Send Message'}
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -360,6 +371,17 @@ const styles = {
   chatButton: {
     padding: '8px 12px',
     backgroundColor: '#28a745',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '12px',
+    fontWeight: 'bold',
+    marginLeft: '5px'
+  },
+  profileButton: {
+    padding: '8px 12px',
+    backgroundColor: '#007bff',
     color: 'white',
     border: 'none',
     borderRadius: '4px',

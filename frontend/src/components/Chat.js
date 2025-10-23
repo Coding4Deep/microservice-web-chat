@@ -266,6 +266,9 @@ const Chat = () => {
             }
           </h2>
           <div>
+            <button onClick={() => navigate('/profile')} style={styles.headerButton}>
+              My Profile
+            </button>
             <button onClick={() => navigate('/dashboard')} style={styles.headerButton}>
               Dashboard
             </button>

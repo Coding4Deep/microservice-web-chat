@@ -71,6 +71,17 @@ services:
       KAFKA_BROKERS: kafka:29092
       USER_SERVICE_URL: http://user-service:8080
 
+  profile-service:
+    build: ./profile-service
+    ports:
+      - "8081:8081"
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/userdb
+    volumes:
+      - ./profile-service/uploads:/app/uploads
+
   frontend:
     build: ./frontend
     ports:
