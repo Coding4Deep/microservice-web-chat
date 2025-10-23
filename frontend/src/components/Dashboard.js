@@ -165,26 +165,32 @@ const Dashboard = () => {
                     Last seen: {new Date(user.lastSeen).toLocaleString()}
                   </div>
                 </div>
-                <div style={styles.userStatus}>
-                  <div style={{
-                    ...styles.statusBadge,
-                    backgroundColor: user.active ? '#28a745' : '#6c757d'
-                  }}>
-                    {user.active ? '✓ Active Account' : '✗ Inactive Account'}
+                <div style={styles.userActions}>
+                  <div style={styles.statusContainer}>
+                    <div style={{
+                      ...styles.statusBadge,
+                      backgroundColor: user.active ? '#28a745' : '#6c757d'
+                    }}>
+                      {user.active ? '✓ Active Account' : '✗ Inactive Account'}
+                    </div>
+                    <div style={{
+                      ...styles.statusBadge,
+                      backgroundColor: onlineUsers.includes(user.username) ? '#007bff' : '#e9ecef',
+                      color: onlineUsers.includes(user.username) ? 'white' : '#6c757d'
+                    }}>
+                      {onlineUsers.includes(user.username) ? '🟢 Online' : '⚫ Offline'}
+                    </div>
                   </div>
-                  <div style={{
-                    ...styles.statusBadge,
-                    backgroundColor: onlineUsers.includes(user.username) ? '#007bff' : '#e9ecef',
-                    color: onlineUsers.includes(user.username) ? 'white' : '#6c757d'
-                  }}>
-                    {onlineUsers.includes(user.username) ? '🟢 Online' : '⚫ Offline'}
-                  </div>
-                  {onlineUsers.includes(user.username) && user.username !== username && (
+                  {user.username !== username && (
                     <button
                       onClick={() => startPrivateChat(user.username)}
-                      style={styles.chatButton}
+                      style={{
+                        ...styles.chatButton,
+                        backgroundColor: onlineUsers.includes(user.username) ? '#28a745' : '#ffc107',
+                        color: onlineUsers.includes(user.username) ? 'white' : 'black'
+                      }}
                     >
-                      💬 Chat
+                      💬 {onlineUsers.includes(user.username) ? 'Chat Now' : 'Send Message'}
                     </button>
                   )}
                 </div>
@@ -312,10 +318,15 @@ const styles = {
     color: '#6c757d',
     fontSize: '12px'
   },
-  userStatus: {
+  userActions: {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'flex-end',
+    gap: '8px'
+  },
+  statusContainer: {
+    display: 'flex',
+    flexDirection: 'column',
     gap: '5px'
   },
   statusBadge: {

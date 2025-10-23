@@ -135,17 +135,41 @@ io.on('connection', (socket) => {
       recipient: data.recipient
     };
     
-    // Save to MongoDB directly for private messages
+    // Save to MongoDB (for offline delivery)
     const newMessage = new Message(messageData);
     await newMessage.save();
     
-    // Send to sender
+    // Send to sender immediately
     socket.emit('privateMessage', messageData);
     
-    // Send to recipient if online
+    // Send to recipient if online, otherwise store for later delivery
     const recipientSocketId = connectedUsers.get(data.recipient);
     if (recipientSocketId) {
       io.to(recipientSocketId).emit('privateMessage', messageData);
+    }
+    // If recipient is offline, message is already saved and will be delivered when they connect
+  });
+
+  socket.on('deleteMessage', async (messageId) => {
+    try {
+      const deletedMessage = await Message.findOneAndDelete({ id: messageId });
+      if (deletedMessage) {
+        // Broadcast deletion to all clients for public messages
+        if (!deletedMessage.isPrivate) {
+          io.emit('messageDeleted', messageId);
+        } else {
+          // For private messages, only notify the conversation participants
+          socket.emit('messageDeleted', messageId);
+          const otherUser = deletedMessage.username === socket.username ? 
+            deletedMessage.recipient : deletedMessage.username;
+          const otherSocketId = connectedUsers.get(otherUser);
+          if (otherSocketId) {
+            io.to(otherSocketId).emit('messageDeleted', messageId);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error deleting message:', error);
     }
   });
   
@@ -234,6 +258,53 @@ app.get('/api/users/active', async (req, res) => {
   try {
     const activeUsers = Array.from(connectedUsers.keys());
     res.json({ activeUsers });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get all users who have exchanged private messages with current user
+app.get('/api/users/conversations/:username', async (req, res) => {
+  try {
+    const { username } = req.params;
+    
+    const conversations = await Message.aggregate([
+      {
+        $match: {
+          isPrivate: true,
+          $or: [
+            { username: username },
+            { recipient: username }
+          ]
+        }
+      },
+      {
+        $group: {
+          _id: {
+            $cond: [
+              { $eq: ['$username', username] },
+              '$recipient',
+              '$username'
+            ]
+          },
+          lastMessage: { $last: '$message' },
+          lastTimestamp: { $last: '$timestamp' },
+          messageCount: { $sum: 1 }
+        }
+      },
+      {
+        $project: {
+          username: '$_id',
+          lastMessage: 1,
+          lastTimestamp: 1,
+          messageCount: 1,
+          _id: 0
+        }
+      },
+      { $sort: { lastTimestamp: -1 } }
+    ]);
+    
+    res.json(conversations);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
