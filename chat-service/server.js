@@ -27,7 +27,9 @@ const KAFKA_BROKERS = process.env.KAFKA_BROKERS || 'localhost:9092';
 const USER_SERVICE_URL = process.env.USER_SERVICE_URL || 'http://localhost:8080';
 
 // MongoDB connection
-mongoose.connect(MONGODB_URI);
+mongoose.connect(MONGODB_URI)
+  .then(() => console.log('Connected to MongoDB'))
+  .catch(err => console.error('MongoDB connection error:', err));
 
 // Message schema
 const messageSchema = new mongoose.Schema({
@@ -44,36 +46,61 @@ const Message = mongoose.model('Message', messageSchema);
 
 // Redis client
 const redisClient = redis.createClient({ url: REDIS_URL });
-redisClient.connect();
+redisClient.connect()
+  .then(() => console.log('Connected to Redis'))
+  .catch(err => console.error('Redis connection error:', err));
 
 // Kafka setup
 const kafka = new Kafka({
   clientId: 'chat-service',
-  brokers: [KAFKA_BROKERS]
+  brokers: [KAFKA_BROKERS],
+  retry: {
+    initialRetryTime: 100,
+    retries: 8
+  }
 });
 
-const producer = kafka.producer();
-const consumer = kafka.consumer({ groupId: 'chat-group' });
+let producer = null;
+let consumer = null;
+let kafkaConnected = false;
 
-// Initialize Kafka
+// Initialize Kafka with retry logic
 async function initKafka() {
-  await producer.connect();
-  await consumer.connect();
-  await consumer.subscribe({ topic: 'chat-messages' });
-  
-  await consumer.run({
-    eachMessage: async ({ message }) => {
-      const data = JSON.parse(message.value.toString());
-      console.log('Received message from Kafka:', data);
-      
-      // Save to MongoDB
-      const newMessage = new Message(data);
-      await newMessage.save();
-      
-      // Broadcast to all connected clients
-      io.emit('message', data);
-    },
-  });
+  try {
+    producer = kafka.producer();
+    consumer = kafka.consumer({ groupId: 'chat-group' });
+    
+    await producer.connect();
+    await consumer.connect();
+    await consumer.subscribe({ topic: 'chat-messages' });
+    
+    await consumer.run({
+      eachMessage: async ({ message }) => {
+        try {
+          const data = JSON.parse(message.value.toString());
+          console.log('Received message from Kafka:', data);
+          
+          // Save to MongoDB
+          const newMessage = new Message(data);
+          await newMessage.save();
+          
+          // Broadcast only public messages to all clients
+          if (!data.isPrivate) {
+            io.emit('message', data);
+          }
+        } catch (error) {
+          console.error('Error processing Kafka message:', error);
+        }
+      },
+    });
+    
+    kafkaConnected = true;
+    console.log('Kafka connected successfully');
+  } catch (error) {
+    console.error('Failed to connect to Kafka:', error);
+    console.log('Chat service will continue without Kafka (direct messaging only)');
+    kafkaConnected = false;
+  }
 }
 
 // Socket.IO connection handling
@@ -117,11 +144,30 @@ io.on('connection', (socket) => {
       recipient: data.recipient || null
     };
     
-    // Send to Kafka
-    await producer.send({
-      topic: 'chat-messages',
-      messages: [{ value: JSON.stringify(messageData) }]
-    });
+    try {
+      // Save to MongoDB
+      const newMessage = new Message(messageData);
+      await newMessage.save();
+      
+      // If Kafka is available, send to Kafka, otherwise broadcast directly
+      if (kafkaConnected && producer) {
+        await producer.send({
+          topic: 'chat-messages',
+          messages: [{ value: JSON.stringify(messageData) }]
+        });
+      } else {
+        // Direct broadcast if Kafka is not available
+        if (!messageData.isPrivate) {
+          io.emit('message', messageData);
+        }
+      }
+    } catch (error) {
+      console.error('Error sending message:', error);
+      // Fallback: broadcast directly even if save fails
+      if (!messageData.isPrivate) {
+        io.emit('message', messageData);
+      }
+    }
   });
   
   socket.on('sendPrivateMessage', async (data) => {
@@ -173,15 +219,6 @@ io.on('connection', (socket) => {
     }
   });
   
-  socket.on('deleteMessage', async (messageId) => {
-    try {
-      await Message.findOneAndDelete({ id: messageId });
-      io.emit('messageDeleted', messageId);
-    } catch (error) {
-      console.error('Error deleting message:', error);
-    }
-  });
-  
   socket.on('clearChat', async () => {
     try {
       await Message.deleteMany({});
@@ -201,29 +238,6 @@ io.on('connection', (socket) => {
     }
   });
 });
-
-// Update Kafka consumer to handle private messages
-async function initKafka() {
-  await producer.connect();
-  await consumer.connect();
-  await consumer.subscribe({ topic: 'chat-messages' });
-  
-  await consumer.run({
-    eachMessage: async ({ message }) => {
-      const data = JSON.parse(message.value.toString());
-      console.log('Received message from Kafka:', data);
-      
-      // Save to MongoDB
-      const newMessage = new Message(data);
-      await newMessage.save();
-      
-      // Broadcast only public messages to all clients
-      if (!data.isPrivate) {
-        io.emit('message', data);
-      }
-    },
-  });
-}
 
 // REST API endpoints
 app.get('/api/messages', async (req, res) => {
@@ -332,7 +346,12 @@ app.delete('/api/messages', async (req, res) => {
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'OK', service: 'chat-service' });
+  res.json({ 
+    status: 'OK', 
+    service: 'chat-service',
+    kafka: kafkaConnected ? 'connected' : 'disconnected',
+    timestamp: new Date().toISOString()
+  });
 });
 
 const PORT = process.env.PORT || 3001;
@@ -340,9 +359,14 @@ const PORT = process.env.PORT || 3001;
 // Start server
 async function startServer() {
   try {
-    await initKafka();
+    // Start server first
     server.listen(PORT, () => {
       console.log(`Chat service running on port ${PORT}`);
+    });
+    
+    // Initialize Kafka in background (non-blocking)
+    initKafka().catch(error => {
+      console.error('Kafka initialization failed, continuing without Kafka:', error);
     });
   } catch (error) {
     console.error('Failed to start server:', error);
