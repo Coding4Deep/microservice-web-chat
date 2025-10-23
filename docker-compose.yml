@@ -77,8 +77,10 @@ services:
       - "8081:8081"
     depends_on:
       - postgres
+      - redis
     environment:
       DATABASE_URL: postgresql://postgres:password@postgres:5432/userdb
+      REDIS_URL: redis://redis:6379
     volumes:
       - ./profile-service/uploads:/app/uploads
 

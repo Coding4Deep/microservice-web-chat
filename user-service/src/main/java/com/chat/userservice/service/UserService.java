@@ -45,6 +45,21 @@ public class UserService {
         });
     }
     
+    public boolean updatePassword(String username, String newPassword) {
+        try {
+            Optional<User> userOpt = userRepository.findByUsername(username);
+            if (userOpt.isPresent()) {
+                User user = userOpt.get();
+                user.setPassword(passwordEncoder.encode(newPassword));
+                userRepository.save(user);
+                return true;
+            }
+            return false;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+    
     public List<User> getAllUsers() {
         return userRepository.findAll();
     }

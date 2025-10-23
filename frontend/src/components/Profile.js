@@ -1,17 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import ImageCropModal from './ImageCropModal';
 
 const Profile = () => {
   const [profile, setProfile] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [bio, setBio] = useState('');
-  const [profilePicture, setProfilePicture] = useState(null);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState('');
+  const [showCropModal, setShowCropModal] = useState(false);
+  const [tempImageData, setTempImageData] = useState(null);
+  const [uploading, setUploading] = useState(false);
   
   const { username: urlUsername } = useParams();
   const { username: currentUser, token, logout } = useAuth();
@@ -47,19 +50,76 @@ const Profile = () => {
     }
   };
 
-  const handleUpdateProfile = async (e) => {
+  const handleImageSelect = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setUploading(true);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+
+      const response = await fetch(`${PROFILE_SERVICE_URL}/api/profile/${currentUser}/upload-temp-image`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setTempImageData(data);
+        setShowCropModal(true);
+      } else {
+        const errorData = await response.json();
+        setError(errorData.detail || 'Failed to upload image');
+      }
+    } catch (err) {
+      setError('Error uploading image');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleImageSave = async (cropData) => {
+    setUploading(true);
+    try {
+      const response = await fetch(`${PROFILE_SERVICE_URL}/api/profile/${currentUser}/process-image`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(cropData)
+      });
+
+      if (response.ok) {
+        setSuccess('Profile picture updated successfully!');
+        setShowCropModal(false);
+        setTempImageData(null);
+        fetchProfile(); // Refresh profile data
+      } else {
+        const errorData = await response.json();
+        setError(errorData.detail || 'Failed to save image');
+      }
+    } catch (err) {
+      setError('Error saving image');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleUpdateBio = async (e) => {
     e.preventDefault();
     if (!isOwnProfile) return;
 
-    const formData = new FormData();
-    if (bio !== profile.bio) {
-      formData.append('bio', bio);
-    }
-    if (profilePicture) {
-      formData.append('profile_picture', profilePicture);
-    }
-
     try {
+      const formData = new FormData();
+      formData.append('bio', bio);
+
       const response = await fetch(`${PROFILE_SERVICE_URL}/api/profile/${currentUser}`, {
         method: 'PUT',
         headers: {
@@ -69,16 +129,15 @@ const Profile = () => {
       });
 
       if (response.ok) {
-        setSuccess('Profile updated successfully!');
+        setSuccess('Bio updated successfully!');
         setIsEditing(false);
-        setProfilePicture(null);
         fetchProfile();
       } else {
         const data = await response.json();
-        setError(data.detail || 'Failed to update profile');
+        setError(data.detail || 'Failed to update bio');
       }
     } catch (err) {
-      setError('Error updating profile');
+      setError('Error updating bio');
     }
   };
 
@@ -190,7 +249,7 @@ const Profile = () => {
           <div style={styles.bioSection}>
             <h3>Bio</h3>
             {isEditing ? (
-              <form onSubmit={handleUpdateProfile}>
+              <form onSubmit={handleUpdateBio}>
                 <textarea
                   value={bio}
                   onChange={(e) => setBio(e.target.value)}
@@ -198,23 +257,9 @@ const Profile = () => {
                   style={styles.bioTextarea}
                   maxLength={500}
                 />
-                <div style={styles.fileInputContainer}>
-                  <label style={styles.fileLabel}>
-                    Change Profile Picture:
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => setProfilePicture(e.target.files[0])}
-                      style={styles.fileInput}
-                    />
-                  </label>
-                  {profilePicture && (
-                    <span style={styles.fileName}>{profilePicture.name}</span>
-                  )}
-                </div>
                 <div style={styles.formButtons}>
                   <button type="submit" style={styles.saveButton}>
-                    Save Changes
+                    Save Bio
                   </button>
                   <button 
                     type="button" 
@@ -231,6 +276,38 @@ const Profile = () => {
               </p>
             )}
           </div>
+
+          {isOwnProfile && (
+            <div style={styles.imageSection}>
+              <h3>Profile Picture</h3>
+              <div style={styles.imageUploadContainer}>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageSelect}
+                  style={styles.fileInput}
+                  id="imageUpload"
+                  disabled={uploading}
+                />
+                <label htmlFor="imageUpload" style={styles.uploadButton}>
+                  {uploading ? 'Uploading...' : '📷 Change Profile Picture'}
+                </label>
+                <p style={styles.uploadHint}>
+                  Upload an image to crop and resize it perfectly for your profile
+                </p>
+              </div>
+            </div>
+          )}
+
+          <ImageCropModal
+            isOpen={showCropModal}
+            onClose={() => {
+              setShowCropModal(false);
+              setTempImageData(null);
+            }}
+            onSave={handleImageSave}
+            tempImageData={tempImageData}
+          />
 
           {isOwnProfile && (
             <div style={styles.passwordSection}>
@@ -423,6 +500,37 @@ const styles = {
     border: 'none',
     borderRadius: '4px',
     cursor: 'pointer'
+  },
+  imageSection: {
+    marginBottom: '30px',
+    borderTop: '1px solid #dee2e6',
+    paddingTop: '30px'
+  },
+  imageUploadContainer: {
+    textAlign: 'center',
+    padding: '20px',
+    border: '2px dashed #dee2e6',
+    borderRadius: '8px',
+    backgroundColor: '#f8f9fa'
+  },
+  fileInput: {
+    display: 'none'
+  },
+  uploadButton: {
+    display: 'inline-block',
+    padding: '12px 24px',
+    backgroundColor: '#007bff',
+    color: 'white',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '16px',
+    fontWeight: 'bold',
+    transition: 'background-color 0.2s'
+  },
+  uploadHint: {
+    marginTop: '10px',
+    fontSize: '14px',
+    color: '#6c757d'
   },
   passwordSection: {
     borderTop: '1px solid #dee2e6',

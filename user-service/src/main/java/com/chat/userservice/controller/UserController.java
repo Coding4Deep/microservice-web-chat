@@ -89,6 +89,37 @@ public class UserController {
         return ResponseEntity.ok(response);
     }
     
+    @PutMapping("/{username}/password")
+    public ResponseEntity<?> updatePassword(
+            @PathVariable String username,
+            @RequestBody Map<String, String> request,
+            @RequestHeader("Authorization") String token) {
+        try {
+            String jwt = token.replace("Bearer ", "");
+            String currentUser = jwtUtil.extractUsername(jwt);
+            
+            // Verify user can only change their own password
+            if (!currentUser.equals(username)) {
+                return ResponseEntity.status(403).body(Map.of("error", "Can only change own password"));
+            }
+            
+            String newPassword = request.get("newPassword");
+            if (newPassword == null || newPassword.trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "New password is required"));
+            }
+            
+            // Update password in user service
+            boolean updated = userService.updatePassword(username, newPassword);
+            if (updated) {
+                return ResponseEntity.ok(Map.of("message", "Password updated successfully"));
+            } else {
+                return ResponseEntity.badRequest().body(Map.of("error", "Failed to update password"));
+            }
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid token or request"));
+        }
+    }
+    
     @GetMapping("/validate")
     public ResponseEntity<?> validateToken(@RequestHeader("Authorization") String token) {
         try {
