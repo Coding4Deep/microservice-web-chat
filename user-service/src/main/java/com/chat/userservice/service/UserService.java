@@ -5,6 +5,7 @@ import com.chat.userservice.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -45,13 +46,16 @@ public class UserService {
         });
     }
     
+    @Transactional
     public boolean updatePassword(String username, String newPassword) {
         try {
             Optional<User> userOpt = userRepository.findByUsername(username);
             if (userOpt.isPresent()) {
                 User user = userOpt.get();
-                user.setPassword(passwordEncoder.encode(newPassword));
+                String encodedPassword = passwordEncoder.encode(newPassword);
+                user.setPassword(encodedPassword);
                 userRepository.save(user);
+                userRepository.flush(); // Force immediate database write
                 return true;
             }
             return false;

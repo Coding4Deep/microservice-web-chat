@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from typing import Optional
 import os
@@ -15,7 +16,7 @@ import redis.asyncio as redis
 from database import get_db, engine
 from models import Base, UserProfile
 from schemas import ProfileResponse, ProfileUpdate, PasswordChange, ImageProcessRequest
-from auth import verify_token
+from auth import verify_token, security
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -264,6 +265,7 @@ async def update_profile(
 async def change_password(
     username: str,
     password_data: PasswordChange,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
     current_user: str = Depends(verify_token),
     db: Session = Depends(get_db)
 ):
@@ -282,11 +284,11 @@ async def change_password(
         if login_response.status_code != 200:
             raise HTTPException(status_code=400, detail="Current password is incorrect")
         
-        # Update password in user service
+        # Update password in user service with correct JWT token
         update_response = await client.put(
             f"http://user-service:8080/api/users/{username}/password",
             json={"newPassword": password_data.new_password},
-            headers={"Authorization": f"Bearer {current_user}"}  # Pass the JWT token
+            headers={"Authorization": f"Bearer {credentials.credentials}"}
         )
         
         if update_response.status_code == 200:

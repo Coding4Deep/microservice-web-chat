@@ -292,6 +292,14 @@ const Profile = () => {
                 <label htmlFor="imageUpload" style={styles.uploadButton}>
                   {uploading ? 'Uploading...' : '📷 Change Profile Picture'}
                 </label>
+                {tempImageData && (
+                  <button 
+                    onClick={() => setShowCropModal(true)}
+                    style={styles.updateImageButton}
+                  >
+                    Update Profile Picture
+                  </button>
+                )}
                 <p style={styles.uploadHint}>
                   Upload an image to crop and resize it perfectly for your profile
                 </p>
@@ -521,6 +529,19 @@ const styles = {
     padding: '12px 24px',
     backgroundColor: '#007bff',
     color: 'white',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '16px',
+    fontWeight: 'bold',
+    transition: 'background-color 0.2s'
+  },
+  updateImageButton: {
+    display: 'block',
+    margin: '15px 0',
+    padding: '12px 24px',
+    backgroundColor: '#28a745',
+    color: 'white',
+    border: 'none',
     borderRadius: '6px',
     cursor: 'pointer',
     fontSize: '16px',

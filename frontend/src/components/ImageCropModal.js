@@ -51,11 +51,11 @@ const ImageCropModal = ({ isOpen, onClose, onSave, tempImageData }) => {
     // Draw image
     ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
     
-    // Draw crop overlay
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    // Draw crop overlay with transparency
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     
-    // Clear crop area
+    // Clear crop area to show original image
     ctx.clearRect(
       crop.x * displayScale,
       crop.y * displayScale,
@@ -63,15 +63,17 @@ const ImageCropModal = ({ isOpen, onClose, onSave, tempImageData }) => {
       crop.height * displayScale
     );
     
-    // Draw crop border
+    // Draw crop border with better visibility
     ctx.strokeStyle = '#007bff';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 3;
+    ctx.setLineDash([5, 5]);
     ctx.strokeRect(
       crop.x * displayScale,
       crop.y * displayScale,
       crop.width * displayScale,
       crop.height * displayScale
     );
+    ctx.setLineDash([]);
   };
 
   const handleMouseDown = (e) => {
