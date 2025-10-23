@@ -103,6 +103,9 @@ const Dashboard = () => {
           <button onClick={() => navigate('/chat')} style={styles.primaryButton}>
             Go to Chat
           </button>
+          <button onClick={() => navigate('/monitoring')} style={styles.monitoringButton}>
+            📊 System Monitor
+          </button>
           <button onClick={logout} style={styles.dangerButton}>
             Logout
           </button>
@@ -367,6 +370,17 @@ const styles = {
     cursor: 'pointer',
     fontSize: '14px',
     fontWeight: 'bold'
+  },
+  monitoringButton: {
+    padding: '12px 20px',
+    backgroundColor: '#17a2b8',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: 'bold',
+    marginRight: '10px'
   },
   chatButton: {
     padding: '8px 12px',

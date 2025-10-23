@@ -5,6 +5,7 @@ import Register from './components/Register';
 import Dashboard from './components/Dashboard';
 import Chat from './components/Chat';
 import Profile from './components/Profile';
+import MonitoringDashboard from './components/MonitoringDashboard';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 function ProtectedRoute({ children }) {
@@ -38,6 +39,11 @@ function App() {
             <Route path="/profile/:username" element={
               <ProtectedRoute>
                 <Profile />
+              </ProtectedRoute>
+            } />
+            <Route path="/monitoring" element={
+              <ProtectedRoute>
+                <MonitoringDashboard />
               </ProtectedRoute>
             } />
             <Route path="/" element={<Navigate to="/login" />} />
