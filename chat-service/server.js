@@ -80,9 +80,12 @@ async function initKafka() {
           const data = JSON.parse(message.value.toString());
           console.log('Received message from Kafka:', data);
           
-          // Save to MongoDB
-          const newMessage = new Message(data);
-          await newMessage.save();
+          // Save to MongoDB using upsert to avoid duplicates
+          await Message.findOneAndUpdate(
+            { id: data.id },
+            data,
+            { upsert: true, new: true }
+          );
           
           // Broadcast only public messages to all clients
           if (!data.isPrivate) {
@@ -145,9 +148,12 @@ io.on('connection', (socket) => {
     };
     
     try {
-      // Save to MongoDB
-      const newMessage = new Message(messageData);
-      await newMessage.save();
+      // Save to MongoDB using upsert to avoid duplicates
+      await Message.findOneAndUpdate(
+        { id: messageData.id },
+        messageData,
+        { upsert: true, new: true }
+      );
       
       // If Kafka is available, send to Kafka, otherwise broadcast directly
       if (kafkaConnected && producer) {
@@ -181,9 +187,12 @@ io.on('connection', (socket) => {
       recipient: data.recipient
     };
     
-    // Save to MongoDB (for offline delivery)
-    const newMessage = new Message(messageData);
-    await newMessage.save();
+    // Save to MongoDB using upsert to avoid duplicates (for offline delivery)
+    await Message.findOneAndUpdate(
+      { id: messageData.id },
+      messageData,
+      { upsert: true, new: true }
+    );
     
     // Send to sender immediately
     socket.emit('privateMessage', messageData);
@@ -350,6 +359,7 @@ app.get('/health', (req, res) => {
     status: 'OK', 
     service: 'chat-service',
     kafka: kafkaConnected ? 'connected' : 'disconnected',
+    onlineUsers: connectedUsers.size,
     timestamp: new Date().toISOString()
   });
 });

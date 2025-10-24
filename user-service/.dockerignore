@@ -1,0 +1,15 @@
+.git/
+.gitignore
+README.md
+Dockerfile
+.dockerignore
+*.md
+.env*
+node_modules/
+npm-debug.log*
+.DS_Store
+target/classes/
+target/test-classes/
+target/maven-*
+target/generated-*
+target/surefire-*

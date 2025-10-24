@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import io from 'socket.io-client';
 
 const Dashboard = () => {
   const [dashboardData, setDashboardData] = useState(null);
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const { username, logout } = useAuth();
+  const [socket, setSocket] = useState(null);
+  const { username, token, logout } = useAuth();
   const navigate = useNavigate();
 
   const USER_SERVICE_URL = 'http://localhost:8080';
@@ -18,10 +20,29 @@ const Dashboard = () => {
       navigate('/login');
       return;
     }
+
+    // Connect to Socket.IO to be tracked as online
+    const newSocket = io(CHAT_SERVICE_URL);
+    setSocket(newSocket);
+
+    newSocket.on('connect', () => {
+      newSocket.emit('join', username);
+    });
+
+    newSocket.on('activeUsers', (users) => {
+      setOnlineUsers((users || []).filter(u => u !== username));
+    });
+
     fetchData();
     
     const interval = setInterval(fetchOnlineUsers, 5000);
-    return () => clearInterval(interval);
+    
+    return () => {
+      clearInterval(interval);
+      if (newSocket) {
+        newSocket.disconnect();
+      }
+    };
   }, [username, navigate]);
 
   const fetchData = async () => {
@@ -31,7 +52,12 @@ const Dashboard = () => {
 
   const fetchDashboardData = async () => {
     try {
-      const response = await fetch(`${USER_SERVICE_URL}/api/users/dashboard`);
+      const response = await fetch(`${USER_SERVICE_URL}/api/users/dashboard`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
       if (response.ok) {
         const data = await response.json();
         setDashboardData(data);

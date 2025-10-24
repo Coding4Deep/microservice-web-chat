@@ -33,6 +33,9 @@ public class JwtUtil {
     }
     
     public boolean isTokenValid(String token) {
+        if (token == null || token.trim().isEmpty()) {
+            return false;
+        }
         try {
             extractClaims(token);
             return true;

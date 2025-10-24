@@ -1,18 +1,10 @@
-FROM tomcat:10.1-jdk17-openjdk-slim
-
-# Remove default webapps
+FROM tomcat:10.1-jre17-temurin-jammy
+RUN groupadd -r appuser && useradd -r -g appuser appuser
 RUN rm -rf /usr/local/tomcat/webapps/*
-
-# Copy the WAR file
 COPY target/monitoring.war /usr/local/tomcat/webapps/monitoring.war
-
-# Install Docker CLI for container monitoring
-RUN apt-get update && \
-    apt-get install -y docker.io procps && \
-    rm -rf /var/lib/apt/lists/*
-
-# Expose port
+RUN chown -R appuser:appuser /usr/local/tomcat
+USER appuser
 EXPOSE 8080
-
-# Start Tomcat
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:8080/monitoring/health || exit 1
 CMD ["catalina.sh", "run"]

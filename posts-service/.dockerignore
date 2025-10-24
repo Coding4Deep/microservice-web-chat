@@ -1,0 +1,11 @@
+.git/
+.gitignore
+README.md
+Dockerfile
+.dockerignore
+*.md
+.env*
+.DS_Store
+vendor/
+*.test
+*.out

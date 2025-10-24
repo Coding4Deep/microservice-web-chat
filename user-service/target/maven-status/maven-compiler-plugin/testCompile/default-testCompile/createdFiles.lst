@@ -1,0 +1,4 @@
+com/chat/userservice/controller/UserControllerTest.class
+com/chat/userservice/util/JwtUtilTest.class
+com/chat/userservice/service/UserServiceTest.class
+com/chat/userservice/config/TestSecurityConfig.class

@@ -1,0 +1,4 @@
+/home/deepak/chat-microservices/user-service/src/test/java/com/chat/userservice/service/UserServiceTest.java
+/home/deepak/chat-microservices/user-service/src/test/java/com/chat/userservice/config/TestSecurityConfig.java
+/home/deepak/chat-microservices/user-service/src/test/java/com/chat/userservice/controller/UserControllerTest.java
+/home/deepak/chat-microservices/user-service/src/test/java/com/chat/userservice/util/JwtUtilTest.java
