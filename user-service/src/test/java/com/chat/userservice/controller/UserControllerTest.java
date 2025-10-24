@@ -14,6 +14,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.LocalDateTime;
 import java.util.*;
 
 import static org.mockito.ArgumentMatchers.*;
@@ -41,19 +42,24 @@ class UserControllerTest {
 
     @BeforeEach
     void setUp() {
-        testUser = new User("testuser", "test@example.com", "password123");
+        testUser = new User();
         testUser.setId(1L);
+        testUser.setUsername("testuser");
+        testUser.setEmail("test@example.com");
+        testUser.setPassword("hashedpassword");
+        testUser.setActive(true);
+        testUser.setCreatedAt(LocalDateTime.now());
     }
 
     @Test
     void registerUser_Success() throws Exception {
-        when(userService.registerUser(anyString(), anyString(), anyString())).thenReturn(testUser);
+        Map<String, String> request = new HashMap<>();
+        request.put("username", "newuser");
+        request.put("email", "new@example.com");
+        request.put("password", "password123");
 
-        Map<String, String> request = Map.of(
-            "username", "testuser",
-            "email", "test@example.com",
-            "password", "password123"
-        );
+        when(userService.registerUser(anyString(), anyString(), anyString()))
+                .thenReturn(testUser);
 
         mockMvc.perform(post("/api/users/register")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -64,93 +70,99 @@ class UserControllerTest {
     }
 
     @Test
-    void registerUser_UsernameExists() throws Exception {
+    void registerUser_DuplicateUsername() throws Exception {
+        Map<String, String> request = new HashMap<>();
+        request.put("username", "existinguser");
+        request.put("email", "new@example.com");
+        request.put("password", "password123");
+
         when(userService.registerUser(anyString(), anyString(), anyString()))
                 .thenThrow(new RuntimeException("Username already exists"));
-
-        Map<String, String> request = Map.of(
-            "username", "testuser",
-            "email", "test@example.com",
-            "password", "password123"
-        );
 
         mockMvc.perform(post("/api/users/register")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadRequest())
+                .andExpected(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("Username already exists"));
     }
 
     @Test
     void loginUser_Success() throws Exception {
-        when(userService.authenticateUser(anyString(), anyString())).thenReturn(Optional.of(testUser));
-        when(jwtUtil.generateToken(anyString())).thenReturn("mock-jwt-token");
+        Map<String, String> request = new HashMap<>();
+        request.put("username", "testuser");
+        request.put("password", "password123");
 
-        Map<String, String> request = Map.of(
-            "username", "testuser",
-            "password", "password123"
-        );
+        when(userService.authenticateUser(anyString(), anyString()))
+                .thenReturn(testUser);
+        when(jwtUtil.generateToken(anyString()))
+                .thenReturn("mock-jwt-token");
 
         mockMvc.perform(post("/api/users/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.userId").value(1))
                 .andExpect(jsonPath("$.token").value("mock-jwt-token"))
-                .andExpect(jsonPath("$.username").value("testuser"))
-                .andExpect(jsonPath("$.userId").value(1));
+                .andExpect(jsonPath("$.username").value("testuser"));
     }
 
     @Test
     void loginUser_InvalidCredentials() throws Exception {
-        when(userService.authenticateUser(anyString(), anyString())).thenReturn(Optional.empty());
+        Map<String, String> request = new HashMap<>();
+        request.put("username", "testuser");
+        request.put("password", "wrongpassword");
 
-        Map<String, String> request = Map.of(
-            "username", "testuser",
-            "password", "wrongpassword"
-        );
+        when(userService.authenticateUser(anyString(), anyString()))
+                .thenReturn(null);
 
         mockMvc.perform(post("/api/users/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error").value("Invalid credentials"));
     }
 
     @Test
-    void validateToken_Valid() throws Exception {
-        when(jwtUtil.isTokenValid(anyString())).thenReturn(true);
-        when(jwtUtil.extractUsername(anyString())).thenReturn("testuser");
-        when(userService.getUserByUsername(anyString())).thenReturn(Optional.of(testUser));
-
-        mockMvc.perform(get("/api/users/validate")
-                .header("Authorization", "Bearer mock-jwt-token"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.valid").value(true))
-                .andExpect(jsonPath("$.username").value("testuser"))
-                .andExpect(jsonPath("$.userId").value(1));
-    }
-
-    @Test
-    void validateToken_Invalid() throws Exception {
-        when(jwtUtil.isTokenValid(anyString())).thenReturn(false);
-
-        mockMvc.perform(get("/api/users/validate")
-                .header("Authorization", "Bearer invalid-token"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.valid").value(false));
-    }
-
-    @Test
-    void getDashboard_Success() throws Exception {
+    void getAllUsers_Success() throws Exception {
         List<User> users = Arrays.asList(testUser);
         when(userService.getAllUsers()).thenReturn(users);
-        when(userService.getTotalUsers()).thenReturn(1L);
-        when(userService.getActiveUsers()).thenReturn(1L);
 
-        mockMvc.perform(get("/api/users/dashboard"))
+        mockMvc.perform(get("/api/users")
+                .header("Authorization", "Bearer mock-token"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalUsers").value(1))
-                .andExpect(jsonPath("$.activeUsers").value(1))
-                .andExpect(jsonPath("$.users").isArray());
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$[0].username").value("testuser"));
+    }
+
+    @Test
+    void getUserStats_Success() throws Exception {
+        when(userService.getTotalUsers()).thenReturn(10L);
+        when(userService.getActiveUsers()).thenReturn(8L);
+
+        mockMvc.perform(get("/api/users/stats")
+                .header("Authorization", "Bearer mock-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalUsers").value(10))
+                .andExpect(jsonPath("$.activeUsers").value(8));
+    }
+
+    @Test
+    void updateUserActivity_Success() throws Exception {
+        when(userService.updateUserActivity(anyString())).thenReturn(testUser);
+
+        mockMvc.perform(put("/api/users/testuser/activity")
+                .header("Authorization", "Bearer mock-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("User activity updated"));
+    }
+
+    @Test
+    void updateUserActivity_UserNotFound() throws Exception {
+        when(userService.updateUserActivity(anyString())).thenReturn(null);
+
+        mockMvc.perform(put("/api/users/nonexistent/activity")
+                .header("Authorization", "Bearer mock-token"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("User not found"));
     }
 }

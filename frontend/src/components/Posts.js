@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
@@ -9,6 +9,9 @@ const Posts = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newPost, setNewPost] = useState({ caption: '', image: null });
   const [creating, setCreating] = useState(false);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [resizedImage, setResizedImage] = useState(null);
+  const canvasRef = useRef(null);
   const { username, token, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -34,6 +37,55 @@ const Posts = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const resizeImage = (file, maxWidth = 800, maxHeight = 600, quality = 0.8) => {
+    return new Promise((resolve) => {
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      
+      img.onload = () => {
+        let { width, height } = img;
+        
+        // Calculate new dimensions
+        if (width > height) {
+          if (width > maxWidth) {
+            height = (height * maxWidth) / width;
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = (width * maxHeight) / height;
+            height = maxHeight;
+          }
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        
+        // Draw and resize
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        canvas.toBlob(resolve, 'image/jpeg', quality);
+      };
+      
+      img.src = URL.createObjectURL(file);
+    });
+  };
+
+  const handleImageSelect = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Create preview
+    const previewUrl = URL.createObjectURL(file);
+    setImagePreview(previewUrl);
+
+    // Resize image
+    const resized = await resizeImage(file);
+    setResizedImage(resized);
+    setNewPost({ ...newPost, image: resized });
   };
 
   const handleCreatePost = async (e) => {
@@ -87,11 +139,10 @@ const Posts = () => {
     }
   };
 
-  const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setNewPost({ ...newPost, image: file });
-    }
+  const clearImage = () => {
+    setImagePreview(null);
+    setResizedImage(null);
+    setNewPost({ ...newPost, image: null });
   };
 
   const formatDate = (dateString) => {
@@ -233,13 +284,28 @@ const Posts = () => {
                 <input
                   type="file"
                   accept="image/*"
-                  onChange={handleImageChange}
+                  onChange={handleImageSelect}
                   required
                   style={styles.fileInput}
                 />
-                {newPost.image && (
-                  <div style={styles.imagePreview}>
-                    <p>Selected: {newPost.image.name}</p>
+                
+                {imagePreview && (
+                  <div style={styles.imagePreviewContainer}>
+                    <div style={styles.previewHeader}>
+                      <span>Image Preview (will be resized to max 800x600)</span>
+                      <button 
+                        type="button" 
+                        onClick={clearImage}
+                        style={styles.clearButton}
+                      >
+                        ✕ Clear
+                      </button>
+                    </div>
+                    <img 
+                      src={imagePreview} 
+                      alt="Preview" 
+                      style={styles.imagePreview}
+                    />
                   </div>
                 )}
               </div>
@@ -258,7 +324,10 @@ const Posts = () => {
               <div style={styles.formActions}>
                 <button 
                   type="button" 
-                  onClick={() => setShowCreateModal(false)}
+                  onClick={() => {
+                    setShowCreateModal(false);
+                    clearImage();
+                  }}
                   style={styles.cancelButton}
                 >
                   Cancel
@@ -278,6 +347,9 @@ const Posts = () => {
           </div>
         </div>
       )}
+      
+      {/* Hidden canvas for image processing */}
+      <canvas ref={canvasRef} style={{ display: 'none' }} />
     </div>
   );
 };
@@ -454,13 +526,37 @@ const styles = {
     border: '1px solid #ced4da',
     borderRadius: '4px'
   },
-  imagePreview: {
+  imagePreviewContainer: {
     marginTop: '10px',
+    border: '2px dashed #ddd',
+    borderRadius: '8px',
     padding: '10px',
-    backgroundColor: '#f8f9fa',
-    borderRadius: '4px',
+    backgroundColor: '#f9f9f9'
+  },
+  previewHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '10px',
     fontSize: '14px',
-    color: '#495057'
+    color: '#666'
+  },
+  clearButton: {
+    background: '#dc3545',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    padding: '4px 8px',
+    cursor: 'pointer',
+    fontSize: '12px'
+  },
+  imagePreview: {
+    maxWidth: '100%',
+    maxHeight: '300px',
+    objectFit: 'contain',
+    borderRadius: '4px',
+    display: 'block',
+    margin: '0 auto'
   },
   textarea: {
     width: '100%',

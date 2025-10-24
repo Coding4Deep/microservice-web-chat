@@ -4,283 +4,274 @@ const Client = require('socket.io-client');
 const http = require('http');
 const express = require('express');
 const mongoose = require('mongoose');
+const redis = require('redis');
 
-// Mock environment variables
-process.env.MONGODB_URI = 'mongodb://localhost:27017/test_chatdb';
-process.env.REDIS_URL = 'redis://localhost:6379';
-process.env.KAFKA_BROKERS = 'localhost:9092';
+// Mock dependencies
+jest.mock('mongoose');
+jest.mock('redis');
+jest.mock('kafkajs');
 
-describe('Chat Service Tests', () => {
+describe('Chat Service', () => {
   let app, server, io, clientSocket, serverSocket;
-  let Message;
+  let mockRedisClient, mockMessage;
 
-  beforeAll(async () => {
-    // Setup test server
+  beforeAll((done) => {
+    // Setup Express app
     app = express();
-    app.use(express.json());
     server = http.createServer(app);
     io = new Server(server);
-
-    // Mock Message model
-    const messageSchema = new mongoose.Schema({
-      id: String,
-      username: String,
-      message: String,
-      timestamp: Date,
-      room: String,
-      isPrivate: Boolean,
-      recipient: String
-    });
-    Message = mongoose.model('TestMessage', messageSchema);
-
-    // Setup routes
-    app.get('/api/messages', async (req, res) => {
-      const messages = await Message.find({ isPrivate: false }).sort({ timestamp: 1 });
-      res.json(messages);
-    });
-
-    app.get('/api/messages/private/:username', async (req, res) => {
-      const { username } = req.params;
-      const { with: otherUser } = req.query;
-      
-      const messages = await Message.find({
-        isPrivate: true,
-        $or: [
-          { username: username, recipient: otherUser },
-          { username: otherUser, recipient: username }
-        ]
-      }).sort({ timestamp: 1 });
-      
-      res.json(messages);
-    });
-
-    app.get('/api/users/active', (req, res) => {
-      res.json({ activeUsers: ['user1', 'user2'] });
-    });
-
-    app.get('/health', (req, res) => {
-      res.json({ status: 'OK', service: 'chat-service' });
-    });
-
-    // Start server
-    await new Promise((resolve) => {
-      server.listen(0, resolve);
-    });
-
-    const port = server.address().port;
-
-    // Setup client socket
-    clientSocket = new Client(`http://localhost:${port}`);
     
-    // Setup server socket handler
-    io.on('connection', (socket) => {
-      serverSocket = socket;
-    });
-  });
+    // Mock Redis
+    mockRedisClient = {
+      connect: jest.fn().mockResolvedValue(),
+      get: jest.fn(),
+      set: jest.fn(),
+      del: jest.fn(),
+      disconnect: jest.fn()
+    };
+    redis.createClient = jest.fn().mockReturnValue(mockRedisClient);
 
-  afterAll(async () => {
-    if (clientSocket) clientSocket.close();
-    if (server) server.close();
-    await mongoose.connection.close();
-  });
+    // Mock MongoDB
+    mockMessage = {
+      save: jest.fn().mockResolvedValue(),
+      find: jest.fn().mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          limit: jest.fn().mockResolvedValue([])
+        })
+      }),
+      findOneAndUpdate: jest.fn().mockResolvedValue(),
+      findByIdAndDelete: jest.fn().mockResolvedValue({ username: 'testuser' })
+    };
+    mongoose.connect = jest.fn().mockResolvedValue();
+    mongoose.model = jest.fn().mockReturnValue(mockMessage);
 
-  beforeEach(async () => {
-    // Clear test data
-    if (Message) {
-      await Message.deleteMany({});
-    }
-  });
-
-  describe('REST API Endpoints', () => {
-    test('GET /health should return service status', async () => {
-      const response = await request(app)
-        .get('/health')
-        .expect(200);
-
-      expect(response.body).toEqual({
-        status: 'OK',
-        service: 'chat-service'
+    server.listen(() => {
+      const port = server.address().port;
+      clientSocket = new Client(`http://localhost:${port}`);
+      
+      io.on('connection', (socket) => {
+        serverSocket = socket;
       });
-    });
-
-    test('GET /api/messages should return public messages', async () => {
-      // Create test messages
-      await Message.create([
-        {
-          id: '1',
-          username: 'user1',
-          message: 'Public message 1',
-          timestamp: new Date(),
-          room: 'general',
-          isPrivate: false
-        },
-        {
-          id: '2',
-          username: 'user2',
-          message: 'Private message',
-          timestamp: new Date(),
-          room: 'private',
-          isPrivate: true,
-          recipient: 'user1'
-        }
-      ]);
-
-      const response = await request(app)
-        .get('/api/messages')
-        .expect(200);
-
-      expect(response.body).toHaveLength(1);
-      expect(response.body[0].message).toBe('Public message 1');
-      expect(response.body[0].isPrivate).toBe(false);
-    });
-
-    test('GET /api/messages/private/:username should return private messages', async () => {
-      // Create test private messages
-      await Message.create([
-        {
-          id: '1',
-          username: 'user1',
-          message: 'Private to user2',
-          timestamp: new Date(),
-          room: 'private',
-          isPrivate: true,
-          recipient: 'user2'
-        },
-        {
-          id: '2',
-          username: 'user2',
-          message: 'Reply to user1',
-          timestamp: new Date(),
-          room: 'private',
-          isPrivate: true,
-          recipient: 'user1'
-        }
-      ]);
-
-      const response = await request(app)
-        .get('/api/messages/private/user1?with=user2')
-        .expect(200);
-
-      expect(response.body).toHaveLength(2);
-      expect(response.body[0].isPrivate).toBe(true);
-    });
-
-    test('GET /api/users/active should return active users', async () => {
-      const response = await request(app)
-        .get('/api/users/active')
-        .expect(200);
-
-      expect(response.body).toHaveProperty('activeUsers');
-      expect(Array.isArray(response.body.activeUsers)).toBe(true);
+      
+      clientSocket.on('connect', done);
     });
   });
 
-  describe('Socket.IO Events', () => {
-    test('should connect and join chat', (done) => {
-      clientSocket.on('connect', () => {
-        expect(clientSocket.connected).toBe(true);
-        done();
-      });
+  afterAll(() => {
+    server.close();
+    clientSocket.close();
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('Socket.IO Connection', () => {
+    test('should connect successfully', (done) => {
+      expect(clientSocket.connected).toBe(true);
+      done();
     });
 
-    test('should handle join event', (done) => {
+    test('should handle user join', (done) => {
       clientSocket.emit('join', 'testuser');
       
       setTimeout(() => {
-        expect(serverSocket).toBeDefined();
+        expect(serverSocket.username).toBe('testuser');
         done();
       }, 100);
     });
 
-    test('should handle sendMessage event', (done) => {
-      const messageData = {
-        username: 'testuser',
-        message: 'Test message'
-      };
-
-      serverSocket.on('sendMessage', (data) => {
-        expect(data.username).toBe('testuser');
-        expect(data.message).toBe('Test message');
+    test('should emit active users on join', (done) => {
+      clientSocket.on('activeUsers', (users) => {
+        expect(Array.isArray(users)).toBe(true);
         done();
       });
-
-      clientSocket.emit('sendMessage', messageData);
-    });
-
-    test('should handle sendPrivateMessage event', (done) => {
-      const privateMessageData = {
-        username: 'user1',
-        message: 'Private test message',
-        recipient: 'user2'
-      };
-
-      serverSocket.on('sendPrivateMessage', (data) => {
-        expect(data.username).toBe('user1');
-        expect(data.message).toBe('Private test message');
-        expect(data.recipient).toBe('user2');
-        done();
-      });
-
-      clientSocket.emit('sendPrivateMessage', privateMessageData);
+      
+      clientSocket.emit('join', 'testuser');
     });
   });
 
-  describe('Message Validation', () => {
-    test('should validate public message structure', () => {
-      const publicMessage = {
-        id: '123',
+  describe('Message Handling', () => {
+    test('should handle public messages', (done) => {
+      const messageData = {
         username: 'testuser',
         message: 'Hello world',
-        timestamp: new Date(),
-        room: 'general',
-        isPrivate: false,
-        recipient: null
+        room: 'general'
       };
 
-      expect(publicMessage.username).toBeDefined();
-      expect(publicMessage.message).toBeDefined();
-      expect(publicMessage.isPrivate).toBe(false);
-      expect(publicMessage.recipient).toBeNull();
+      clientSocket.on('message', (data) => {
+        expect(data.username).toBe('testuser');
+        expect(data.message).toBe('Hello world');
+        expect(data.room).toBe('general');
+        done();
+      });
+
+      clientSocket.emit('message', messageData);
     });
 
-    test('should validate private message structure', () => {
-      const privateMessage = {
-        id: '456',
-        username: 'user1',
-        message: 'Private hello',
-        timestamp: new Date(),
-        room: 'private',
-        isPrivate: true,
-        recipient: 'user2'
+    test('should handle private messages', (done) => {
+      const messageData = {
+        username: 'testuser',
+        message: 'Private message',
+        recipient: 'otheruser',
+        isPrivate: true
       };
 
-      expect(privateMessage.username).toBeDefined();
-      expect(privateMessage.message).toBeDefined();
-      expect(privateMessage.isPrivate).toBe(true);
-      expect(privateMessage.recipient).toBeDefined();
+      clientSocket.on('privateMessage', (data) => {
+        expect(data.username).toBe('testuser');
+        expect(data.message).toBe('Private message');
+        expect(data.isPrivate).toBe(true);
+        done();
+      });
+
+      clientSocket.emit('privateMessage', messageData);
+    });
+
+    test('should validate message data', (done) => {
+      const invalidMessage = {
+        username: '',
+        message: '',
+        room: 'general'
+      };
+
+      clientSocket.on('error', (error) => {
+        expect(error.message).toContain('validation');
+        done();
+      });
+
+      clientSocket.emit('message', invalidMessage);
+    });
+  });
+
+  describe('Message Persistence', () => {
+    test('should save messages to MongoDB', async () => {
+      const messageData = {
+        id: 'test123',
+        username: 'testuser',
+        message: 'Test message',
+        room: 'general'
+      };
+
+      clientSocket.emit('message', messageData);
+
+      setTimeout(() => {
+        expect(mockMessage.findOneAndUpdate).toHaveBeenCalledWith(
+          { id: 'test123' },
+          expect.objectContaining(messageData),
+          { upsert: true, new: true }
+        );
+      }, 100);
+    });
+
+    test('should handle MongoDB errors gracefully', async () => {
+      mockMessage.findOneAndUpdate.mockRejectedValueOnce(new Error('DB Error'));
+      
+      const messageData = {
+        username: 'testuser',
+        message: 'Test message',
+        room: 'general'
+      };
+
+      // Should not crash the service
+      clientSocket.emit('message', messageData);
+      
+      setTimeout(() => {
+        expect(clientSocket.connected).toBe(true);
+      }, 100);
+    });
+  });
+
+  describe('API Endpoints', () => {
+    test('GET /health should return service status', async () => {
+      const response = await request(app).get('/health');
+      
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('status', 'OK');
+      expect(response.body).toHaveProperty('service', 'chat-service');
+    });
+
+    test('GET /api/messages should return message history', async () => {
+      mockMessage.find.mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          limit: jest.fn().mockResolvedValue([
+            { username: 'user1', message: 'Hello', timestamp: new Date() }
+          ])
+        })
+      });
+
+      const response = await request(app).get('/api/messages');
+      
+      expect(response.status).toBe(200);
+      expect(Array.isArray(response.body)).toBe(true);
+    });
+
+    test('GET /api/users/active should return active users', async () => {
+      const response = await request(app).get('/api/users/active');
+      
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('activeUsers');
+      expect(Array.isArray(response.body.activeUsers)).toBe(true);
+    });
+
+    test('DELETE /api/messages/:id should delete message', async () => {
+      const response = await request(app)
+        .delete('/api/messages/test123')
+        .set('Authorization', 'Bearer mock-token');
+      
+      expect(response.status).toBe(200);
+      expect(mockMessage.findByIdAndDelete).toHaveBeenCalledWith('test123');
     });
   });
 
   describe('Error Handling', () => {
-    test('should handle invalid message data', async () => {
-      const response = await request(app)
-        .get('/api/messages/private/invaliduser')
-        .expect(200);
-
-      expect(response.body).toEqual([]);
+    test('should handle invalid message format', (done) => {
+      clientSocket.emit('message', 'invalid-format');
+      
+      setTimeout(() => {
+        expect(clientSocket.connected).toBe(true);
+        done();
+      }, 100);
     });
 
-    test('should handle database errors gracefully', async () => {
-      // Mock database error
-      jest.spyOn(Message, 'find').mockRejectedValueOnce(new Error('Database error'));
+    test('should handle disconnection gracefully', (done) => {
+      clientSocket.emit('join', 'testuser');
+      
+      setTimeout(() => {
+        clientSocket.disconnect();
+        
+        setTimeout(() => {
+          expect(serverSocket.disconnected).toBe(true);
+          done();
+        }, 100);
+      }, 100);
+    });
+  });
 
-      const response = await request(app)
-        .get('/api/messages')
-        .expect(500);
+  describe('Security', () => {
+    test('should sanitize message content', (done) => {
+      const maliciousMessage = {
+        username: 'testuser',
+        message: '<script>alert("xss")</script>',
+        room: 'general'
+      };
 
-      expect(response.body).toHaveProperty('error');
+      clientSocket.on('message', (data) => {
+        expect(data.message).not.toContain('<script>');
+        done();
+      });
+
+      clientSocket.emit('message', maliciousMessage);
+    });
+
+    test('should validate username format', (done) => {
+      const invalidUsername = '../../../etc/passwd';
+      
+      clientSocket.emit('join', invalidUsername);
+      
+      setTimeout(() => {
+        expect(serverSocket.username).not.toBe(invalidUsername);
+        done();
+      }, 100);
     });
   });
 });
-
-module.exports = { Message };

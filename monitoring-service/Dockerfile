@@ -1,7 +1,15 @@
+# Multi-stage build
+FROM maven:3.9.4-openjdk-17-slim AS builder
+WORKDIR /app
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+COPY src ./src
+RUN mvn clean package -DskipTests
+
 FROM tomcat:10.1-jre17-temurin-jammy
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 RUN rm -rf /usr/local/tomcat/webapps/*
-COPY target/monitoring.war /usr/local/tomcat/webapps/monitoring.war
+COPY --from=builder /app/target/*.war /usr/local/tomcat/webapps/monitoring.war
 RUN chown -R appuser:appuser /usr/local/tomcat
 USER appuser
 EXPOSE 8080

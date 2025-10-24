@@ -1,8 +1,0 @@
-com/chat/userservice/controller/UserController.class
-com/chat/userservice/repository/UserRepository.class
-com/chat/userservice/service/UserService.class
-com/chat/userservice/entity/User.class
-com/chat/userservice/config/SecurityConfig.class
-com/chat/userservice/config/JwtAuthenticationFilter.class
-com/chat/userservice/UserServiceApplication.class
-com/chat/userservice/util/JwtUtil.class
